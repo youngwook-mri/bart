@@ -24,8 +24,7 @@
 #include "mri.h"
 
 
-
-
+#define TOL 1e-5
 
 
 
@@ -173,9 +172,10 @@ void calib_geom(long caldims[DIMS], long calpos[DIMS], const long calsize[3], co
 
 			long offset = md_calc_offset(DIMS, calpos, pat_strs);
 			float si = sqrtf((float)caldims[0] * (float)caldims[1] * (float)caldims[2]);
+                        double err = fabs(si - md_znorm2(DIMS, caldims, pat_strs, pattern + offset / CFL_SIZE));
 		
-			if (si != md_znorm2(DIMS, caldims, pat_strs, pattern + offset / CFL_SIZE)) {
-		
+			if (err > TOL) {
+
 				caldims[i]--;
 				calpos[i] = (in_dims[i] - caldims[i]) / 2;
 				stop[i] = true;

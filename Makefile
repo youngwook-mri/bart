@@ -229,8 +229,13 @@ NVCCFLAGS = -DUSE_CUDA -Xcompiler -fPIC -Xcompiler -fopenmp -O3 -arch=sm_20 -I$(
 # OpenMP
 
 ifeq ($(OMP),1)
+ifeq ($(CC), clang-mp-3.8)
+CFLAGS += -fopenmp=libomp
+CXXFLAGS += -fopenmp=libomp
+else
 CFLAGS += -fopenmp
 CXXFLAGS += -fopenmp
+endif
 else
 CFLAGS += -Wno-unknown-pragmas
 CXXFLAGS += -Wno-unknown-pragmas

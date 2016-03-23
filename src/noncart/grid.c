@@ -153,7 +153,7 @@ void gridH(float os, float width, double beta, const complex float* traj, const 
 	assert(1 == ksp_dims[0]);
 	long samples = ksp_dims[1] * ksp_dims[2];
 
-#pragma omp parallel for
+        //#pragma omp parallel for
 	for(int i = 0; i < samples; i++) {
 
 		float pos[3];
@@ -195,7 +195,7 @@ void grid(float os, float width, double beta, const complex float* traj, const l
 	long samples = ksp_dims[1] * ksp_dims[2];
 
 	// grid
-#pragma omp parallel for
+        //#pragma omp parallel for
 	for(int i = 0; i < samples; i++) {
 
 		float pos[3];
@@ -322,11 +322,18 @@ void grid_point(unsigned int ch, const long dims[3], const float pos[3], complex
 
 	for (unsigned int c = 0; c < ch; c++) {
 
+            //FIXME: atomic does not work with clang-mp-3.8
+#if 1
+		__real(dst[indu + c * dims[0] * dims[1] * dims[2]]) += __real(val[c]) * du;
+		__imag(dst[indu + c * dims[0] * dims[1] * dims[2]]) += __imag(val[c]) * du;
+#else
 		// we are allowed to update real and imaginary part independently which works atomically
 		#pragma omp atomic
 		__real(dst[indu + c * dims[0] * dims[1] * dims[2]]) += __real(val[c]) * du;
 		#pragma omp atomic
 		__imag(dst[indu + c * dims[0] * dims[1] * dims[2]]) += __imag(val[c]) * du;
+#endif
+                
 	}}}}
 }
 
@@ -369,11 +376,17 @@ void grid_pointH(unsigned int ch, const long dims[3], const float pos[3], comple
 
 	for (unsigned int c = 0; c < ch; c++) {
 
-		// we are allowed to update real and imaginary part independently which works atomically
+#if 1
+            //FIXME: atomic does not work with clang-mp-3.8
+		__real(val[c]) += __real(src[indu + c * dims[0] * dims[1] * dims[2]]) * du;
+		__imag(val[c]) += __imag(src[indu + c * dims[0] * dims[1] * dims[2]]) * du;
+#else
 		#pragma omp atomic
 		__real(val[c]) += __real(src[indu + c * dims[0] * dims[1] * dims[2]]) * du;
 		#pragma omp atomic
 		__imag(val[c]) += __imag(src[indu + c * dims[0] * dims[1] * dims[2]]) * du;
+#endif
+                
 	}}}}
 }
 
@@ -394,7 +407,7 @@ void rolloff_correction(float os, float width, float beta, const long dimensions
 {
 	UNUSED(os);
 
-#pragma omp parallel for collapse(3)
+        //#pragma omp parallel for collapse(3)
 	for (int z = 0; z < dimensions[2]; z++) 
 		for (int y = 0; y < dimensions[1]; y++) 
 			for (int x = 0; x < dimensions[0]; x++)
