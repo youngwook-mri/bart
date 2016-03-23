@@ -43,6 +43,8 @@ matrix:
         apt:
           packages:
             - *default_packages
+      script:
+        - make test
 
     - env: CUDA=1 CUDA_BASE=/usr/local/cuda-7.5/
       os: linux
