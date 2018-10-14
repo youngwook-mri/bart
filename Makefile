@@ -101,6 +101,7 @@ CXXFLAGS ?= $(OPT)
 
 ifeq ($(BUILDTYPE), MacOSX)
 	CC ?= gcc-mp-6
+	CFLAGS += -DUSE_MACOSX
 else
 	CC ?= gcc
 	# for symbols in backtraces

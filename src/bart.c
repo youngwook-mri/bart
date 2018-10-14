@@ -20,6 +20,9 @@
 #include "misc/misc.h"
 #include "misc/debug.h"
 #include "misc/cppmap.h"
+#ifdef USE_MACOSX
+#include "misc/fmemopen.h"
+#endif
 
 #ifdef USE_CUDA
 #include "num/gpuops.h"
