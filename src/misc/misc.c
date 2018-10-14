@@ -539,6 +539,10 @@ unsigned int bitcount(unsigned int flags)
  __attribute__((optimize("-fno-finite-math-only")))
 bool safe_isnanf(float x)
 {
+#ifdef USE_MACOSX
+	return isnan(x);
+#else
 	return isnanf(x);
+#endif
 }
 
