@@ -1,5 +1,5 @@
 # Copyright 2013-2015. The Regents of the University of California.
-# Copyright 2015-2018. Martin Uecker <martin.uecker@med.uni-goettingen.de>
+# Copyright 2015-2019. Martin Uecker <martin.uecker@med.uni-goettingen.de>
 # All rights reserved. Use of this source code is governed by
 # a BSD-style license which can be found in the LICENSE file.
 
@@ -8,6 +8,9 @@ MAKESTAGE ?= 1
 
 # silent make
 #MAKEFLAGS += --silent
+
+# auto clean on makefile updates
+AUTOCLEAN?=1
 
 # clear out all implicit rules and variables
 MAKEFLAGS += -R
@@ -23,6 +26,7 @@ SLINK?=0
 DEBUG?=0
 FFTWTHREADS?=1
 ISMRMRD?=0
+NOEXEC_STACK?=0
 
 LOG_BACKEND?=0
 LOG_SIEMENS_BACKEND?=0
@@ -177,10 +181,12 @@ MODULES_ccapply = -lcalib
 MODULES_estvar = -lcalib
 MODULES_nufft = -lnoncart -liter -llinops
 MODULES_rof = -liter -llinops
+MODULES_tgv = -liter -llinops
 MODULES_bench = -lwavelet -llinops
 MODULES_phantom = -lsimu
 MODULES_bart = -lbox -lgrecon -lsense -lnoir -liter -llinops -lwavelet -llowrank -lnoncart -lcalib -lsimu -lsake -ldfwavelet -lnlops
 MODULES_sake = -lsake
+MODULES_traj = -lnoncart
 MODULES_wave = -liter -lwavelet -llinops -llowrank
 MODULES_threshold = -llowrank -liter -ldfwavelet -llinops -lwavelet
 MODULES_fakeksp = -lsense -llinops
@@ -191,7 +197,8 @@ MODULES_wavelet = -llinops -lwavelet
 MODULES_wshfl = -llinops -lwavelet -liter -llowrank
 
 
-MAKEFILES = $(root)/Makefiles/Makefile.*
+MAKEFILES = $(wildcard $(root)/Makefiles/Makefile.*)
+ALLMAKEFILES = $(root)/Makefile $(wildcard $(root)/Makefile.* $(root)/*.mk $(root)/rules/*.mk $(root)/Makefiles/Makefile.*)
 
 -include Makefile.$(NNAME)
 -include Makefile.local
@@ -233,6 +240,9 @@ CPPFLAGS += -g
 CFLAGS += -g
 endif
 
+ifeq ($(NOEXEC_STACK),1)
+CPPFLAGS += -DNOEXEC_STACK
+endif
 
 ifeq ($(PARALLEL),1)
 MAKEFLAGS += -j
@@ -243,6 +253,12 @@ ifeq ($(MAKESTAGE),1)
 .PHONY: doc/commands.txt $(TARGETS)
 default all clean allclean distclean doc/commands.txt doxygen test utest gputest $(TARGETS):
 	make MAKESTAGE=2 $(MAKECMDGOALS)
+
+tests/test-%: force
+	make MAKESTAGE=2 $(MAKECMDGOALS)
+
+force: ;
+
 else
 
 
@@ -506,18 +522,37 @@ $(UTARGETS): % : utests/utest.c utests/%.o $$(MODULES_%) $(MODULES)
 
 clean:
 	rm -f `find $(srcdir) -name "*.o"`
-	rm -f utests/*.o
+	rm -f $(root)/utests/*.o
 	rm -f $(patsubst %, %, $(UTARGETS))
-	rm -f $(root)/lib/.*.lock
+	rm -f $(libdir)/.*.lock
 
 allclean: clean
 	rm -f $(libdir)/*.a $(ALLDEPS)
 	rm -f $(patsubst %, %, $(TARGETS))
 	rm -f $(srcdir)/misc/version.inc
-	rm -rf doc/dx
-	rm -f doc/commands.txt
+	rm -rf $(root)/tests/tmp/*/
+	rm -rf $(root)/doc/dx
+	rm -f $(root)/doc/commands.txt
+	touch isclean
 
 distclean: allclean
+
+
+
+-include isclean
+
+
+isclean: $(ALLMAKEFILES)
+ifeq ($(AUTOCLEAN),1)
+	@echo "CONFIGURATION MODIFIED. RUNNING FULL REBUILD."
+	touch isclean
+	make allclean || rm isclean
+else
+ifneq ($(MAKECMDGOALS),allclean)
+	@echo "CONFIGURATION MODIFIED."
+endif
+endif
+
 
 
 # automatic tests

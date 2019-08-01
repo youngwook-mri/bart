@@ -72,7 +72,7 @@ The software tools in recon should run on any recent Linux distribution.
 
 To install the required libraries on Debian and Ubuntu run:
 
-    $ sudo apt-get install gcc make libfftw3-dev liblapacke-dev libpng-dev libopenblas-dev
+    $ sudo apt-get install gcc make libfftw3-dev liblapacke-dev libpng-dev libopenblas-dev gfortran
 
     (optional)
     $ sudo apt-get install octave
@@ -110,7 +110,7 @@ want to try an older version (e.g. version 4.00).
 
 The recommended way to use BART on Windows is with the Windows Subsystem for
 Linux (WSL) which is available for Windows 10. If you use WSL, you need to
-use the clang compiler.
+either use the clang compiler or gcc with the NOEXEC_STACK option.
 
 
 BART should also work with Cygwin:

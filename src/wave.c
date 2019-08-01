@@ -24,6 +24,7 @@
 #include "num/fft.h"
 #include "num/init.h"
 #include "num/iovec.h"
+#include "num/ops_p.h"
 #include "num/ops.h"
 #ifdef USE_CUDA
 #include "num/gpuops.h"
@@ -89,7 +90,7 @@ static const struct linop_s* linop_espirit_create(long sx, long sy, long sz, lon
 }
 
 /* Resize operator. */
-static const struct linop_s* linop_reshape_create(long wx, long sx, long sy, long sz, long nc)
+static const struct linop_s* Xlinop_reshape_create(long wx, long sx, long sy, long sz, long nc)
 {
 	long input_dims[] = { [0 ... DIMS - 1] = 1};
 	input_dims[0] = sx;
@@ -246,7 +247,7 @@ int main_wave(int argc, char* argv[])
 	debug_printf(DP_INFO, "\tE:   %f seconds.\n", t2 - t1);
 
 	t1 = timestamp();
-	const struct linop_s* R = linop_reshape_create(wx, sx, sy, sz, nc);
+	const struct linop_s* R = Xlinop_reshape_create(wx, sx, sy, sz, nc);
 	t2 = timestamp();
 	debug_printf(DP_INFO, "\tR:   %f seconds.\n", t2 - t1);
 
@@ -399,13 +400,13 @@ int main_wave(int argc, char* argv[])
 	complex float* recon = create_cfl(argv[4], DIMS, recon_dims);
 	struct lsqr_conf lsqr_conf = { 0., gpun >= 0 };
 	double recon_start = timestamp();
-	const struct operator_s* J = lsqr2_create(&lsqr_conf, italgo, iconf, NULL, A, NULL, 1, &T, NULL, NULL);
-	operator_apply(J, DIMS, recon_dims, recon, DIMS, kspc_dims, kspc);
+	const struct operator_p_s* J = lsqr2_create(&lsqr_conf, italgo, iconf, NULL, A, NULL, 1, &T, NULL, NULL);
+	operator_p_apply(J, 1., DIMS, recon_dims, recon, DIMS, kspc_dims, kspc);
 	double recon_end = timestamp();
 	debug_printf(DP_INFO, "Done.\nReconstruction time: %f seconds.\n", recon_end - recon_start);
 
 	debug_printf(DP_INFO, "Cleaning up and saving result... ");
-	operator_free(J);
+	operator_p_free(J);
 	linop_free(A);
 	md_free(mask);
 	unmap_cfl(DIMS, maps_dims, maps);

@@ -1,12 +1,12 @@
 /* Copyright 2013-2018. The Regents of the University of California.
- * Copyright 2016-2018. Martin Uecker.
+ * Copyright 2016-2019. Martin Uecker.
  * Copyright 2017. University of Oxford.
  * All rights reserved. Use of this source code is governed by
  * a BSD-style license which can be found in the LICENSE file.
  *
  * Authors: 
- * 2012-2018 Martin Uecker <martin.uecker@med.uni-goettingen.de>
- * 2014, 2017-2018 Jon Tamir <jtamir@eecs.berkeley.edu>
+ * 2012-2019 Martin Uecker <martin.uecker@med.uni-goettingen.de>
+ * 2014-2018 Jon Tamir <jtamir@eecs.berkeley.edu>
  * 2017 Sofia Dimoudi <sofia.dimoudi@cardiov.ox.ac.uk>
  */
 
@@ -23,6 +23,7 @@
 #include "num/multind.h"
 #include "num/flpmath.h"
 #include "num/iovec.h"
+#include "num/ops_p.h"
 #include "num/ops.h"
 
 #include "linops/linop.h"
@@ -75,6 +76,54 @@ static bool checkeps(float eps)
 }
 
 
+static bool check_ops(long size,
+	const struct operator_s* normaleq_op,
+	unsigned int D,
+	const struct operator_p_s* prox_ops[D],
+	const struct linop_s* ops[D])
+{
+	if (NULL != normaleq_op) {
+
+		auto dom = operator_domain(normaleq_op);
+
+		if (size != 2 * md_calc_size(dom->N, dom->dims))	// FIXME: too weak
+			return false;
+
+		auto cod = operator_codomain(normaleq_op);
+
+		if (size != 2 * md_calc_size(cod->N, cod->dims))	// FIXME: too weak
+			return false;
+	}
+
+	for (unsigned int i = 0; i < D; i++) {
+
+		long cosize = size;
+
+		if ((NULL != ops) && (NULL != ops[i])) {
+
+			auto dom = linop_domain(ops[i]);
+
+			if (size != 2 * md_calc_size(dom->N, dom->dims))	// FIXME: too weak
+				return false;
+
+			auto cod = linop_codomain(ops[i]);
+			cosize = 2 * md_calc_size(cod->N, cod->dims);
+		}
+
+		if ((NULL != prox_ops) && (NULL != prox_ops[i])) {
+
+			auto dom2 = operator_p_domain(prox_ops[i]);
+
+			if (cosize != 2 * md_calc_size(dom2->N, dom2->dims))
+				return false;	// FIXME: too weak
+		}
+	}
+
+	return true;
+}
+
+
+
 void iter2_conjgrad(iter_conf* _conf,
 		const struct operator_s* normaleq_op,
 		unsigned int D,
@@ -91,6 +140,8 @@ void iter2_conjgrad(iter_conf* _conf,
 	assert(NULL == biases);
 	UNUSED(xupdate_op);
 
+	assert(check_ops(size, normaleq_op, D, prox_ops, ops));
+
 	auto conf = CAST_DOWN(iter_conjgrad_conf, _conf);
 
 	float eps = md_norm(1, MD_DIMS(size), image_adj);
@@ -98,7 +149,7 @@ void iter2_conjgrad(iter_conf* _conf,
 	if (checkeps(eps))
 		goto cleanup;
 
-	conjgrad(conf->maxiter, conf->l2lambda, eps * conf->tol, size, select_vecops(image_adj),
+	conjgrad(conf->maxiter, conf->INTERFACE.alpha * conf->l2lambda, eps * conf->tol, size, select_vecops(image_adj),
 			OPERATOR2ITOP(normaleq_op), image, image_adj, monitor);
 
 cleanup:
@@ -126,6 +177,8 @@ void iter2_ist(iter_conf* _conf,
 #endif
 	UNUSED(xupdate_op);
 
+	assert(check_ops(size, normaleq_op, D, prox_ops, ops));
+
 	auto conf = CAST_DOWN(iter_ist_conf, _conf);
 
 	float eps = md_norm(1, MD_DIMS(size), image_adj);
@@ -133,11 +186,15 @@ void iter2_ist(iter_conf* _conf,
 	if (checkeps(eps))
 		goto cleanup;
 
-	assert((conf->continuation >= 0.) && (conf->continuation <= 1.));
+	// This was probably broken for IST until v0.4.04
+	// better turn of it off with an error
+	assert(1 == conf->continuation);
 
-	ist(conf->maxiter, eps * conf->tol, conf->step, conf->continuation, conf->hogwild, size, select_vecops(image_adj),
-		OPERATOR2ITOP(normaleq_op), OPERATOR_P2ITOP(prox_ops[0]), image, image_adj, monitor);
+	// Let's see whether somebody uses it...
+	assert(!conf->hogwild);
 
+	ist(conf->maxiter, eps * conf->tol, conf->INTERFACE.alpha * conf->step, size, select_vecops(image_adj),
+		NULL, OPERATOR2ITOP(normaleq_op), OPERATOR_P2ITOP(prox_ops[0]), image, image_adj, monitor);
 
 cleanup:
 	;
@@ -167,15 +224,43 @@ void iter2_fista(iter_conf* _conf,
 
 	float eps = md_norm(1, MD_DIMS(size), image_adj);
 
+	assert(check_ops(size, normaleq_op, D, prox_ops, ops));
+
 	if (checkeps(eps))
-		goto cleanup;
+		return; // clang limitation
+	//	goto cleanup;
 
 	assert((conf->continuation >= 0.) && (conf->continuation <= 1.));
 
-	fista(conf->maxiter, eps * conf->tol, conf->step, conf->continuation, conf->hogwild, size, select_vecops(image_adj),
-		OPERATOR2ITOP(normaleq_op), OPERATOR_P2ITOP(prox_ops[0]), image, image_adj, monitor);
+	__block int hogwild_k = 0;
+	__block int hogwild_K = 10;
 
-cleanup:
+	NESTED(void, continuation, (struct ist_data* itrdata))
+	{
+		float a = logf(conf->continuation) / (float)itrdata->maxiter;
+		itrdata->scale = expf(a * itrdata->iter);
+
+		if (conf->hogwild) {
+
+			/* this is not exactly identical to what was implemented
+			 * before as tau is now reduced at the beginning. But this
+			 * seems more correct. */
+
+			hogwild_k++;
+
+			if (hogwild_k == hogwild_K) {
+
+				hogwild_k = 0;
+				hogwild_K *= 2;
+				itrdata->tau /= 2;
+			}
+		}
+	};
+
+	fista(conf->maxiter, eps * conf->tol, conf->INTERFACE.alpha * conf->step, size, select_vecops(image_adj),
+		continuation, OPERATOR2ITOP(normaleq_op), OPERATOR_P2ITOP(prox_ops[0]), image, image_adj, monitor);
+
+// cleanup:
 	;
 }
 
@@ -207,6 +292,8 @@ void iter2_chambolle_pock(iter_conf* _conf,
 
 	assert((long)md_calc_size(iv->N, iv->dims) * 2 == size);
 
+	assert(check_ops(size, normaleq_op, D, prox_ops, ops));
+
 	// FIXME: sensible way to check for corrupt data?
 #if 0
 	float eps = md_norm(1, MD_DIMS(size), image_adj);
@@ -217,7 +304,7 @@ void iter2_chambolle_pock(iter_conf* _conf,
 	float eps = 1.;
 #endif
 
-
+	// FIXME: conf->INTERFACE.alpha * c
 	chambolle_pock(conf->maxiter, eps * conf->tol, conf->tau, conf->sigma, conf->theta, conf->decay, 2 * md_calc_size(iv->N, iv->dims), 2 * md_calc_size(ov->N, ov->dims), select_vecops(image),
 			OPERATOR2ITOP(ops[1]->forward), OPERATOR2ITOP(ops[1]->adjoint), OPERATOR_P2ITOP(prox_ops[1]), OPERATOR_P2ITOP(prox_ops[0]), 
 			image, monitor);
@@ -240,6 +327,8 @@ void iter2_admm(iter_conf* _conf,
 {
 	auto conf = CAST_DOWN(iter_admm_conf, _conf);
 
+	assert(check_ops(size, normaleq_op, D, prox_ops, ops));
+
 	struct admm_plan_s admm_plan = {
 
 		.maxiter = conf->maxiter,
@@ -254,7 +343,7 @@ void iter2_admm(iter_conf* _conf,
 		.hogwild = conf->hogwild,
 		.ABSTOL = conf->ABSTOL,
 		.RELTOL = conf->RELTOL,
-		.alpha = conf->alpha,
+		.alpha = conf->alpha * conf->INTERFACE.alpha,
 		.tau = conf->tau,
 		.tau_max = conf->tau_max,
 		.mu = conf->mu,
@@ -322,6 +411,8 @@ void iter2_pocs(iter_conf* _conf,
 	UNUSED(xupdate_op);
 	UNUSED(image_adj);
 	
+	assert(check_ops(size, normaleq_op, D, prox_ops, ops));
+
 	struct iter_op_p_s proj_ops[D];
 
 	for (unsigned int i = 0; i < D; i++)
@@ -357,7 +448,9 @@ void iter2_niht(iter_conf* _conf,
 	};
 
 	struct niht_transop trans;
-	if (NULL != ops){
+
+	if (NULL != ops) {
+
 		trans.forward = OPERATOR2ITOP(ops[0]->forward);
 		trans.adjoint = OPERATOR2ITOP(ops[0]->adjoint);
 		trans.N = 2 * md_calc_size(linop_codomain(ops[0])->N, linop_codomain(ops[0])->dims);

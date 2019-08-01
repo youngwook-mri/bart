@@ -108,7 +108,7 @@ static void make_2op_simple(md_2op_t fun, unsigned int D, const long dims[D], fl
  */
 static void optimized_twoop_oi(unsigned int D, const long dim[D], const long ostr[D], void* optr, const long istr1[D], const void* iptr1, size_t sizes[2], md_nary_opt_fun_t too)
 {
-	const long (*nstr[2])[D] = { (const long (*)[D])ostr, (const long (*)[D])istr1 };
+	const long (*nstr[2])[D?D:1] = { (const long (*)[D?D:1])ostr, (const long (*)[D?D:1])istr1 };
 	void *nptr[2] = { optr, (void*)iptr1 };
 
 	unsigned int io = 1 + ((iptr1 == optr) ? 2 : 0);
@@ -137,7 +137,7 @@ static void optimized_twoop_oi(unsigned int D, const long dim[D], const long ost
  */
 static void optimized_threeop_oii(unsigned int D, const long dim[D], const long ostr[D], void* optr, const long istr1[D], const void* iptr1, const long istr2[D], const void* iptr2, size_t sizes[3], md_nary_opt_fun_t too)
 {
-	const long (*nstr[3])[D] = { (const long (*)[D])ostr, (const long (*)[D])istr1, (const long (*)[D])istr2 };
+	const long (*nstr[3])[D?D:1] = { (const long (*)[D?D:1])ostr, (const long (*)[D?D:1])istr1, (const long (*)[D?D:1])istr2 };
 	void *nptr[3] = { optr, (void*)iptr1, (void*)iptr2 };
 
 	unsigned int io = 1 + ((iptr1 == optr) ? 2 : 0) + ((iptr2 == optr) ? 4 : 0);
@@ -1598,8 +1598,7 @@ void md_axpy2(unsigned int D, const long dims[D], const long ostr[D], float* opt
 		if (md_calc_blockdim(D, dims, istr, FL_SIZE) != D)
 			goto fallback;
 
-		if (iptr == optr)
-			goto fallback;
+		//  (iptr == optr) is safe.
 
 		gpu_ops.axpy(md_calc_size(D, dims), optr, val, iptr);
 		return;
@@ -3408,7 +3407,7 @@ void md_smax2(unsigned int D, const long dim[D], const long ostr[D], float* optr
 
 	NESTED(void, nary_smax, (struct nary_opt_data_s* data, void* ptr[]))
 	{
-		data->ops->smax(data->size, ptr[0], ptr[1], val);
+		data->ops->smax(data->size, val, ptr[0], ptr[1]);
 	};
 
 	optimized_twoop_oi(D, dim, ostr, optr, istr, iptr,
@@ -3430,10 +3429,35 @@ void md_zsmax2(unsigned int D, const long dim[D], const long ostr[D], complex fl
 	md_zmul2(D, dim, ostr, optr, istr, iptr, istr, tmp);
 	md_free(tmp);
 #else
+#if 0
 	make_z3op_scalar(md_zmax2, D, dim, ostr, optr, istr, iptr, val);
+#else
+	// FIXME: we should rather optimize md_zmul2 for this case
+
+	NESTED(void, nary_zsmax, (struct nary_opt_data_s* data, void* ptr[]))
+	{
+		data->ops->zsmax(data->size, val, ptr[0], ptr[1]);
+	};
+
+	optimized_twoop_oi(D, dim, ostr, optr, istr, iptr,
+		(size_t[2]){ CFL_SIZE, CFL_SIZE }, nary_zsmax);
+#endif
 #endif
 }
 
+
+/**
+ * Elementwise maximum of input and scalar (without strides)
+ *
+ * optr = max(val, iptr)
+ */
+void md_zsmax(unsigned int D, const long dim[D], complex float* optr, const complex float* iptr, float val)
+{
+	long str[D];
+	md_calc_strides(D, str, dim, CFL_SIZE);
+
+	md_zsmax2(D, dim, str, optr, str, iptr, val);
+}
 
 
 /**

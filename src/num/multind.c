@@ -57,7 +57,7 @@ void md_nary(unsigned int C, unsigned int D, const long dim[D], const long* str[
 {
 	if (0 == D) {
 
-		fun(ptr);
+		NESTED_CALL(fun, (ptr));
 		return;
 	}
 
@@ -149,7 +149,7 @@ static void md_parallel_loop_r(unsigned int D, unsigned int N, const long dim[st
 {
 	if (0 == D) {
 
-		fun(pos);
+		NESTED_CALL(fun, (pos));
 		return;
 	}
 
@@ -189,7 +189,7 @@ static void md_loop_r(unsigned int D, const long dim[D], long pos[D], md_loop_fu
 {
 	if (0 == D) {
 
-		fun(pos);
+		NESTED_CALL(fun, (pos));
 		return;
 	}
 
@@ -647,14 +647,13 @@ void md_copy2(unsigned int D, const long dim[D], const long ostr[D], void* optr,
 	size_t sizes[2] = { size, size };
 	int skip = min_blockdim(2, ND, tdims, nstr2, sizes);
 
+	long ostr2 = (*nstr2[0])[skip];
+	long istr2 = (*nstr2[1])[skip];
 
-	if (use_gpu && (ND - skip > 0)) {
+	if (use_gpu && (ND - skip > 0) && (ostr2 > 0) && (istr2 > 0)) {
 
 		void* nptr[2] = { optr, (void*)iptr };
-
 		long sizes[2] = { md_calc_size(skip, tdims) * size, tdims[skip] };
-		long ostr2 = (*nstr2[0])[skip];
-		long istr2 = (*nstr2[1])[skip];
 
 		skip++;
 
@@ -664,12 +663,13 @@ void md_copy2(unsigned int D, const long dim[D], const long ostr[D], void* optr,
 
 		NESTED(void, nary_strided_copy, (void* ptr[]))
 		{
-		//	printf("CUDA 2D copy %ld %ld %ld %ld %ld %ld\n", data->sizes[0], data->sizes[1], data->ostr, data->istr, (long)ptr[0], (long)ptr[1]);
+			debug_printf(DP_DEBUG4, "CUDA 2D copy %ld %ld %ld %ld %ld %ld\n",
+				sizes[0], sizes[1], ostr2, istr2, nptr[0], nptr[1]);
 
 			cuda_memcpy_strided(sizesp, ostr2, ptr[0], istr2, ptr[1]);
 		};
 
-		md_nary(2, ND - skip, tdims + skip , nstr, nptr, nary_strided_copy);
+		md_nary(2, ND - skip, tdims + skip, nstr, nptr, nary_strided_copy);
 		return;
 	}
 #endif

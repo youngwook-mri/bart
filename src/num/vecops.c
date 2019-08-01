@@ -355,7 +355,7 @@ static void max(long N, float* dst, const float* src1, const float* src2)
 		dst[i] = MAX(src1[i], src2[i]);
 }
 
-static void smax(long N, float* dst, const float* src1, const float val)
+static void smax(long N, float val, float* dst, const float* src1)
 {
 	for (long i = 0; i < N; i++)
 		dst[i] = MAX(src1[i], val);
@@ -366,6 +366,13 @@ static void min(long N, float* dst, const float* src1, const float* src2)
 {
 	for (long i = 0; i < N; i++)
 		dst[i] = MIN(src1[i], src2[i]);
+}
+
+
+static void zsmax(long N, float val, complex float* dst, const complex float* src)
+{
+	for (long i = 0; i < N; i++)
+		dst[i] = MAX(crealf(src[i]), val);
 }
 
 
@@ -618,6 +625,7 @@ const struct vec_ops cpu_ops = {
 	.zfmacc = zfmacc,
 	.zfmacc2 = zfmacc2,
 
+	.zsmax = zsmax,
 	.zsmul = zsmul,
 
 	.zpow = zpow,
@@ -687,7 +695,7 @@ const struct vec_iter_s cpu_iter_ops = {
 	.add = add,
 	.sub = sub,
 	.swap = swap,
-	.zmul = zmul
+	.zmul = zmul,
 };
 
 

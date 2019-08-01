@@ -10,10 +10,20 @@
 #ifndef __TYPES_H
 #define __TYPES_H
 
+#include <stddef.h>
+#include <stdnoreturn.h>
+
+#ifndef __cplusplus
+extern noreturn void error(const char* str, ...);
+#else
+extern __attribute__((noreturn)) void error(const char* str, ...);
+#endif
+
+
+
 #define TYPE_CHECK(T, x)	(1 ? (x) : (T)0)
 #define CONTAINER_OF(x, T, member)	\
 	((T*)((char*)TYPE_CHECK(__typeof__(&((T*)0)->member), x) - offsetof(T, member)))
-
 
 #define CAST_CONST(T, x)  ((T)TYPE_CHECK(const T, x))
 #define CAST_MAYBE(T, x)	({ \
@@ -34,11 +44,14 @@
 
 #define INTERFACE(X) X INTERFACE
 
-typedef const struct typeid_s { int:1; } TYPEID;
+typedef const struct typeid_s { int size; } TYPEID;
 
-#define TYPEID(T) T ## _TYPEID
-#define DEF_TYPEID(T) TYPEID TYPEID(T)
+#define TYPEID2(T) (T ## _TYPEID)
+#define TYPEID(T) (*({ extern TYPEID T ## _TYPEID; &T ## _TYPEID; }))
+#define DEF_TYPEID(T) TYPEID T ## _TYPEID = { sizeof(struct T) };
 #define SET_TYPEID(T, x) (TYPE_CHECK(struct T*, x)->INTERFACE.TYPEID = &TYPEID(T))
+
+#define SIZEOF(x) ((x)->TYPEID->size)
 
 // redefine auto - needs newer compilers
 #define auto __auto_type

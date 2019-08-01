@@ -20,6 +20,7 @@
 #include "num/flpmath.h"
 #include "num/fft.h"
 #include "num/init.h"
+#include "num/ops_p.h"
 #include "num/ops.h"
 
 #include "iter/misc.h"
@@ -64,7 +65,7 @@ static const struct linop_s* sense_nc_init(const long max_dims[DIMS], const long
 	long ksp_dims2[DIMS];
 	md_copy_dims(DIMS, ksp_dims2, ksp_dims);
 	ksp_dims2[COEFF_DIM] = max_dims[COEFF_DIM];
-	ksp_dims2[TE_DIM] = 1;
+	//ksp_dims2[TE_DIM] = 1;
 
 	debug_print_dims(DP_INFO, DIMS, ksp_dims2);
 	debug_print_dims(DP_INFO, DIMS, coilim_dims);
@@ -79,7 +80,7 @@ static const struct linop_s* sense_nc_init(const long max_dims[DIMS], const long
 		 * sensitivity weighting but before NUFFT).
 		 */
 
-		const struct linop_s* fft_slice = linop_fft_create(DIMS, map_dims, SLICE_FLAG);
+		const struct linop_s* fft_slice = linop_fft_create(DIMS, coilim_dims, SLICE_FLAG);
 
 		fft_op = linop_chain_FF(fft_slice, fft_op);
 	}
@@ -224,7 +225,6 @@ int main_pics(int argc, char* argv[])
         if (sms) {
 
                 debug_printf(DP_INFO, "SMS reconstruction: MB = %ld\n", ksp_dims[SLICE_DIM]);
-                nuconf.toeplitz = false; // no longer toeplitz-shaped because of chaining of operators (see later)?!
         }
 
 	complex float* maps = load_cfl(argv[2], DIMS, map_dims);
@@ -282,6 +282,11 @@ int main_pics(int argc, char* argv[])
 
 	if (!md_check_compat(DIMS, ~(MD_BIT(MAPS_DIM)|FFT_FLAGS), img_dims, map_dims))
 		error("Dimensions of image and sensitivities do not match!\n");
+
+	if ((NULL != traj_file) && (!md_check_compat(DIMS, ~0, ksp_dims, traj_dims)))
+		error("Dimensions of data and trajectory do not match!\n");
+
+
 
 	assert(1 == ksp_dims[MAPS_DIM]);
 
@@ -351,7 +356,7 @@ int main_pics(int argc, char* argv[])
 
 	if (NULL != traj_file) {
 
-		if (NULL == pat_file) {
+		if (NULL == pat_file && NULL == basis) {
 
 			md_free(pattern);
 			pattern = NULL;
@@ -623,10 +628,13 @@ int main_pics(int argc, char* argv[])
 	if (im_truth)
 		monitor = create_monitor(2*md_calc_size(DIMS, img_dims), (const float*)image_truth, NULL, NULL); 
 	
-	const struct operator_s* op = sense_recon_create(&conf, max1_dims, forward_op,
+	const struct operator_p_s* po = sense_recon_create(&conf, max1_dims, forward_op,
 				pat1_dims, ((NULL != traj_file) || conf.bpsense) ? NULL : pattern1,
 				it.italgo, it.iconf, image_start1, nr_penalties, thresh_ops,
 				trafos_cond ? trafos : NULL, precond_op, monitor);
+
+	const struct operator_s* op = operator_p_bind(po, 1.);
+//	operator_p_free(po);	// FIXME
 
 	long strsx[2][DIMS];
 	const long* strs[2] = { strsx[0], strsx[1] };
